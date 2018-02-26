@@ -1,0 +1,8 @@
+{
+  "AppSettings": {
+    "SQLConnectionString": "Server=DESKTOP-AT25PLJ\\SQLEXPRESS; Database=SampleDB;user=sa;password=pass@123;Trusted_Connection=False;",
+    "SourceDirectoryPath": "C:\\Temp",
+    "MySQLConnectionString": "Server=localhost;Database=sampledb;Uid=root;Pwd=pass@123;",
+    "DestinationDirectoryPath": "C:\\Temp"
+  }
+}
