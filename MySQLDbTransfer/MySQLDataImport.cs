@@ -1,7 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using MySql.Data.MySqlClient;
 using System;
-using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.IO.Compression;
@@ -10,25 +9,29 @@ using System.Text;
 
 namespace MySQLDbTransfer
 {
-    public class MySQLDataExport
+    public class MySQLDataImport
     {
-        private const int cBatchCount = 1000;
-        private const string FILEEXTENSION = ".xml.gz";
+        #region Fields
+        private const int cBatchCount = 2000;
 
         private string _connectionString = "";
         private string _directoryPath = "";
 
-        public MySQLDataExport(IConfigurationRoot config)
+        #endregion
+
+        public MySQLDataImport(IConfigurationRoot config)
         {
             _connectionString = config["AppSettings:MySQLConnectionString"];
             _directoryPath = config["AppSettings:DestinationDirectoryPath"];
         }
 
-        public bool ExportData(string url = "")
+        #region Methods
+
+        public bool Import(string url = "")
         {
             WriteToConsole("** MySql Data Export Started**");
             bool bValue = true;
-            string newFileName = "Dbdata" + FILEEXTENSION;
+            string newFileName = "Dbdata.xml.gz";
             string filePath = Path.Combine(_directoryPath, newFileName);
             if(url != "")
                 bValue = DownloadFile(url, filePath);
@@ -56,15 +59,15 @@ namespace MySQLDbTransfer
         {
             try
             {
-                EnableDisableForeignKey(false);
+                DisableForeignKey(true);
                 if (ds != null)
                 {
                     foreach (DataTable dt in ds.Tables)
                     {
-                        InsertData(dt, dt.TableName);
+                        Populate(dt, dt.TableName);
                     }
                 }
-                EnableDisableForeignKey(true);
+                DisableForeignKey(false);
             }
             catch (Exception ex)
             {
@@ -72,22 +75,13 @@ namespace MySQLDbTransfer
             }
         }
 
-        private object Transform(object col)
+        private object ConvertDataTypes(object col)
         {
             if (col == null)
                 return "NULL";
 
             switch (col.GetType().FullName)
             {
-                case "System.DBNull":
-                    return "NULL";
-                case "System.Guid":
-                case "System.String":
-                    return $"\"{col.ToString().Replace("\"", "\\\"").Replace("'", "\\'")}\"";
-                case "System.DateTime":
-                    return $"\"{((DateTime)col).ToString("yyyy-MM-dd HH:mm:ss")}\"";
-                case "System.Byte[]":
-                    return "0x" + BitConverter.ToString((byte[])col).Replace("-", "");
                 case "System.Int16":
                 case "System.Int32":
                 case "System.Int64":
@@ -101,16 +95,25 @@ namespace MySQLDbTransfer
                 case "System.Decimal":
                 case "System.Boolean":
                     return col;
+                case "System.DBNull":
+                    return "NULL";
+                case "System.Guid":
+                case "System.String":
+                    return $"\"{col.ToString().Replace("\"", "\\\"").Replace("'", "\\'")}\"";
+                case "System.DateTime":
+                    return $"\"{((DateTime)col).ToString("yyyy-MM-dd HH:mm:ss")}\"";
+                case "System.Byte[]":
+                    return "0x" + BitConverter.ToString((byte[])col).Replace("-", "");
             }
             return col;
         }
 
-        private void InsertData(DataTable dt, string tableName)
+        private void Populate(DataTable dt, string tableName)
         {
             if (dt.Rows.Count == 0) return;
             try
             {
-                string truncateQuery = "Truncate Table `" + tableName + "`;";
+                string truncateQuery = "Truncate Table `" + tableName + "`;"; //First truncate the table
                 using (MySqlConnection connection = new MySqlConnection(_connectionString))
                 {
                     using (MySqlCommand command = new MySqlCommand())
@@ -123,7 +126,7 @@ namespace MySQLDbTransfer
                 }
 
                 StringBuilder sb = new StringBuilder($"INSERT INTO `" + tableName + "` (");
-                StringBuilder sbRows = new StringBuilder();
+                StringBuilder sbValues = new StringBuilder();
                 StringBuilder sbQuery = new StringBuilder();
                 foreach (DataColumn column in dt.Columns)
                 {
@@ -131,24 +134,24 @@ namespace MySQLDbTransfer
                 }
                 sb.Remove(sb.Length - 1, 1);
                 sb.Append(") VALUES ");
-                int nCount = 0;
+                int cnt = 0;
                 foreach (DataRow row in dt.Rows)
                 {
-                    nCount++;
-                    sbRows.Append("(");
+                    cnt++;
+                    sbValues.Append("(");
                     foreach (var col in row.ItemArray)
                     {
-                        sbRows.Append(Transform(col)).Append(",");
+                        sbValues.Append(ConvertDataTypes(col)).Append(",");
                     }
-                    sbRows.Remove(sbRows.Length - 1, 1);
-                    sbRows.Append("),");
-                    if (nCount == cBatchCount)
+                    sbValues.Remove(sbValues.Length - 1, 1);
+                    sbValues.Append("),");
+                    if (cnt == cBatchCount)
                     {
-                        if (sbRows.Length > 0)
+                        if (sbValues.Length > 0)
                         {
-                            sbRows.Remove(sbRows.Length - 1, 1);
+                            sbValues.Remove(sbValues.Length - 1, 1);
                             sbQuery.Append(sb);
-                            sbQuery.Append(sbRows);
+                            sbQuery.Append(sbValues);
                             using (MySqlConnection connection = new MySqlConnection(_connectionString))
                             {
                                 using (MySqlCommand command = new MySqlCommand())
@@ -160,17 +163,17 @@ namespace MySQLDbTransfer
                                 }
                             }
                         }
-                        sbRows.Clear();
                         sbQuery.Clear();
-                        nCount = 0;
+                        sbValues.Clear();
+                        cnt = 0;
                     }
                 }
-                if (sbRows.Length > 0)
+                if (sbValues.Length > 0)
                 {
-                    sbRows.Remove(sbRows.Length - 1, 1);
-                    sb.Append(sbRows);
+                    sbValues.Remove(sbValues.Length - 1, 1);
+                    sb.Append(sbValues);
                 }
-                if (sbRows.Length > 0)
+                if (sbValues.Length > 0)
                 {
                     using (MySqlConnection connection = new MySqlConnection(_connectionString))
                     {
@@ -191,13 +194,13 @@ namespace MySQLDbTransfer
             }
         }
 
-        private void EnableDisableForeignKey(bool bEnable)
+        private void DisableForeignKey(bool flag)
         {
             string query = "";
-            if (bEnable)
-                query = "SET FOREIGN_KEY_CHECKS=1;";
-            else
+            if (flag)
                 query = "SET FOREIGN_KEY_CHECKS=0;";
+            else
+                query = "SET FOREIGN_KEY_CHECKS=1;";
             try
             {
                 using (MySqlConnection connection = new MySqlConnection(_connectionString))
@@ -213,7 +216,7 @@ namespace MySQLDbTransfer
             }
             catch (Exception ex)
             {
-                WriteToConsole("Error: EnableDisableForeignKey()" + "\n" + ex.ToString());
+                WriteToConsole("Error: DisableForeignKey()" + "\n" + ex.ToString());
                 throw ex;
             }
         }
@@ -283,5 +286,7 @@ namespace MySQLDbTransfer
         {
             Console.WriteLine(msg);
         }
+
+        #endregion
     }
 }

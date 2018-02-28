@@ -26,8 +26,8 @@ namespace MySQLDbTransfer
                         deService.ExtractData();
                         break;
                     case "2":
-                        var mySQLService = provider.GetRequiredService<MySQLDataExport>();
-                        mySQLService.ExportData();
+                        var mySQLService = provider.GetRequiredService<MySQLDataImport>();
+                        mySQLService.Import();
                         break;
                     default:
                         break;
@@ -45,7 +45,7 @@ namespace MySQLDbTransfer
         private static void ConfigureServices(IServiceCollection serviceCollection)
         {
             serviceCollection.AddTransient<DataExtractor>();
-            serviceCollection.AddTransient<MySQLDataExport>();
+            serviceCollection.AddTransient<MySQLDataImport>();
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsetting.json", false)

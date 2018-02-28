@@ -11,8 +11,10 @@ namespace MySQLDbTransfer
 {
     public class DataExtractor
     {
+        #region Fields
         private string _connectionString = "";
         private string _directoryPath = "";
+        #endregion
 
         public DataExtractor(IConfigurationRoot config)
         {
@@ -20,6 +22,8 @@ namespace MySQLDbTransfer
             _directoryPath = config["AppSettings:SourceDirectoryPath"];
         }
 
+        #region Methods
+        
         public void ExtractData()
         {
             try
@@ -106,5 +110,7 @@ namespace MySQLDbTransfer
                 }
             }
         }
+
+        #endregion
     }
 }
